@@ -1,0 +1,8 @@
+/bin
+/target
+/xtend-gen
+/dat
+/log
+/symbol_*
+/ticktables_*
+**/*.prefs
