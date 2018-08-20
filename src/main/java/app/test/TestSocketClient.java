@@ -26,12 +26,14 @@ import share.threading.ExecutorUtil;
 import share.util.DateUtil;
 import share.util.FInt;
 import share.util.FileUtil;
+import pkts.WmGetQuoteAndRankPacket;
 
 import java.io.IOException;
-import java.util.Date;
-import java.util.LinkedHashSet;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+
+import java.io.FileWriter;
+import java.io.BufferedWriter;
 
 
 /**
@@ -58,6 +60,19 @@ public class TestSocketClient extends SocketClient
 	public boolean m_bShowReceivedPacket = false;
 	public LinkedHashSet<String> m_hsOrder = new LinkedHashSet<>();
 	public String sOrdid = null;
+	String fileName = "./conf/RSA/data";
+	String Data = "";
+
+	private List<PacketListener> sendPacketListeners = new ArrayList<>();
+	private List<PacketListener> receivePacketListeners = new ArrayList<>();
+
+	public void addSendPacketListener(PacketListener packetListener) {
+		sendPacketListeners.add(packetListener);
+	}
+
+	public void addReceivePacketListener(PacketListener packetListener) {
+		receivePacketListeners.add(packetListener);
+	}
 	
 	byte[] m_rsaKey = FileUtil.loadBytes("./conf/RSA/private_key.der");
 	ClientPktCipher m_cipher = new ClientPktCipher();
@@ -75,8 +90,14 @@ public class TestSocketClient extends SocketClient
 	//-----------------------------------------------------------
 	public void onReceivedPacket(BasePacket p)
 	{
-		if (m_bShowReceivedPacket)
-			System.out.println(DateUtil.getDateString(new Date(), "[HH:mm:ss]") + " Client.onReceivedPacket -------" + p.getClass().getName()+" "+p.toJsonString());
+		for (PacketListener listener : receivePacketListeners) {
+			listener.onPacket(p);
+		}
+
+		if (m_bShowReceivedPacket) {
+			System.out.println(DateUtil.getDateString(new Date(), "[HH:mm:ss]") + " Client.onReceivedPacket -------" + p.getClass().getName() + " " + p.toJsonString());
+		}
+
 		switch(p.getPacketType())
 		{
 			case CutError:
@@ -111,6 +132,7 @@ public class TestSocketClient extends SocketClient
 	protected void printPacket(BasePacket p)
 	{
 		System.out.println(p.getPacketType().name() + " " + p.toJsonString());
+
 	}
 	/**
 	 * 得到 client 端的 packet，表示 server 送錯了！
@@ -337,14 +359,53 @@ public class TestSocketClient extends SocketClient
 		p.m_pwd = sPass;
 		sendPacket(p);
 	}
-	public void subscribeQuote(String sSymbol, int channel, int nFieldSet)
+	public void subscribeQuote(String sSymbol, int channel, int nFieldSet,String token)
 	{
 		SubscribeQuotePacket p = new SubscribeQuotePacket();
 		p.m_seq = m_nSeq.next();
 		p.m_id = sSymbol;
+		p.m_token=token;
 		p.set_fs(nFieldSet);
 		p.set_ch(channel);
 		sendPacket(m_cipher.encryptAES(p, true));
+	}
+
+	//SubscribeChart2{"id":"CHFNOK.FX","count":116,"seq":238,"pt":104,"ctype":2,"period":"1D"}
+	public void subscribeChart2(String sSymol,int count,int ctype,String period)
+	{
+		SubscribeChart2Packet p = new SubscribeChart2Packet();
+		p.m_seq = m_nSeq.next();
+		p.m_id = sSymol;
+		p.m_ctype = ctype;
+		p.m_period = period;
+		p.m_count = count;
+		sendPacket(p);
+	}
+	//client.getChart("601989.SH.SC", ChartType.K, ChartFreq._day, 100);
+	public void getChart(String sSymbol,int ctype, String period, int count)
+	{
+		GetChartPacket p = new GetChartPacket();
+		p.m_seq = m_nSeq.next();
+		p.m_id = sSymbol;
+		p.m_ctype = ctype;
+		p.m_period = period;
+		p.m_count = count;
+		sendPacket(p);
+	}
+
+	//WmGetQuoteAndRank(508) ; packetSize[41]{"pt":508,"seq":172,"type":"SZ","categories":[{"id":"AMT","level":0,"desc":0}],"timestamp":0}
+	public  void WmGetQuoteAndRank(String type, String id, int level, int desc)
+	{
+		WmGetQuoteAndRankPacket p = new WmGetQuoteAndRankPacket();
+		p.m_seq = m_nSeq.next();
+		p.m_type = type;
+		WmGetQuoteAndRankPacket.Category tCategory = new WmGetQuoteAndRankPacket.Category();
+		tCategory.m_id = id;
+		tCategory.m_level = level;
+		tCategory.m_desc = desc;
+		p.m_categories = new WmGetQuoteAndRankPacket.Categories(tCategory);
+		sendPacket(p);
+
 	}
 	public void premiumFollow(String sID, String sAcc, String sMarket, String sMaster)
 	{
@@ -606,6 +667,21 @@ public class TestSocketClient extends SocketClient
 		p.m_userlvl = level;
 		sendPacket(p);
 	}
+	//public EnterOrderPacket(int seq, String account, String sym, int side, int otype, double price, double qty, int strategy, double strategy_prc1, String txid, String user, int reason, String behalf, double yesterday_qty, double today_qty, String broker) {
+	public void EnterOrderPacket(String account, String sym, int side, int otype, double qty, int strategy)
+	{
+		EnterOrderPacket p = new EnterOrderPacket();
+		p.m_seq = sm_nSeq.next();
+		p.m_account = account;
+		p.m_sym = sym;
+		p.m_side = side;
+		//p.m_price = price;
+		p.m_otype = otype;
+		p.m_qty = qty;
+		p.m_txid = UUID.randomUUID().toString();
+		p.m_strategy = strategy;
+		sendPacket(p);
+	}
 	//-----------------------------------------------------------
 	/**
 	 * 取得是否 ConnectStatus 已經取得
@@ -716,6 +792,10 @@ public class TestSocketClient extends SocketClient
 	{
 		synchronized (m_nPacketNo) // synchronized: 避免不同 thread call sendPacket, 造成 p_no 大的會比較早送出
 		{
+			for (PacketListener listener : sendPacketListeners) {
+				listener.onPacket(p);
+			}
+
 			printPacket(p);
 			int nPno = m_nPacketNo.nextOrClear(Param.sm_nPacketNoMax, 0);
 			InterfacePacket ip = new InterfacePacket(Param.sm_nServerVersion, nPno, p);
@@ -829,7 +909,7 @@ public class TestSocketClient extends SocketClient
 	static public void testRsaToken() 
 	{
 		try{
-//			System.out.println("cipher :" + GenerateToken("seemo", "semmo-FX", "seemo@hkfdt.com", "123-456-789", "parse-abcde-fghij-lmnop", "TW"));
+	//		System.out.println("cipher :" + GenerateToken("seemo", "semmo-FX", "seemo@hkfdt.com", "123-456-789", "parse-abcde-fghij-lmnop", "TW"));
 
 			
 		} catch(Exception e)
@@ -916,7 +996,7 @@ public class TestSocketClient extends SocketClient
 	static public void main(String[] argv)
 	{
 		
-//		testRsaToken();
+		//testRsaToken();
 		testRsaTokenDecode(); 
 		TestSocketClient client = new TestSocketClient("");
 		try{
@@ -925,7 +1005,7 @@ public class TestSocketClient extends SocketClient
 //			client.start("211.154.155.184", 8880, -1);
 //			client.start("127.0.0.1", 8880, -1);
 //			client.start("192.168.4.152", 8882, -1);
-			client.start("127.0.0.1", 8880, -1);
+			client.start("192.168.4.141", 7009, -1);
 //			client.start("192.168.4.152", 8880, -1);
 //			client.start("10.0.1.24", 8880, -1);
 //			client.start("10.0.1.27", 8881, -1);
@@ -1021,7 +1101,7 @@ public class TestSocketClient extends SocketClient
 //			client.subscribeQuote("IF1510.CF.FC;IF1511.CF.FC", Omits.OmitInt);
 //			client.subscribeQuote("IC1506.CF.FC", Omits.OmitInt);
 			//client.subscribeQuote("601318.SH.SC", Omits.OmitInt);
-			client.subscribeQuote("IC1601.CF.FC", Omits.OmitInt, Omits.OmitInt);
+			//client.subscribeQuote("600005.SH.WM", Omits.OmitInt, Omits.OmitInt);
 //			client.subscribeQuote("AUDUSD.FX;USDJPY.FX;EURUSD.FX", Omits.OmitInt, Omits.OmitInt);
 			//client.subscribeChart("EURJPY.FX", ChartType.K, ChartFreq._15min, 96);
 //			client.subscribeChart("601318.SH.SC", ChartType.K, ChartFreq._60min, 132);
@@ -1030,7 +1110,7 @@ public class TestSocketClient extends SocketClient
 //			client.subscribeChart("AUDUSD.FX", ChartType.K, ChartFreq._15min, 96);
 			//client.subscribeChart("USDJPY.FX", ChartType.K, ChartFreq._15min, 96);
 //			Thread.sleep(100);
-//			client.getChart("601989.SH.SC", ChartType.K, ChartFreq._day, 100);
+			client.getChart("601989.SH.WM", 2,"DC", 100);
 //			client.getChart("USDJPY.FX", ChartType.Line, ChartFreq._1min, 2);
 //			doGetChart(client, "USDJPY.FX");
 //			doGetChart(client, "USDCHF.FX");
@@ -1080,7 +1160,7 @@ public class TestSocketClient extends SocketClient
 			//Thread.sleep(2000);
 			//client.getAccount("seanlo2-FX");
 			//client.createUser("test030", "abcd", "tet030@FDT.com", "11-222-333", UserCreatedType.Normal, "TW");
-			client.userLogin(sID, sPass, sParse, sCountry);
+//			client.userLogin(sID, sPass, sParse, sCountry);
 //			client.userLogin("natalie", "123456", "parse-natalie", "TW");
 			//client.userLogin("test023", "abcd", "dafagasdg", "TW");
 //			client.userCreateLogin(sOrgID, sID, sPass, sEmail, sPhone, UserCreatedType.Facebook, sCountry, sParse, sLanguage);
@@ -1094,9 +1174,9 @@ public class TestSocketClient extends SocketClient
 //			client.doGroupList(GroupListCode.GET, sID, "SC");
 //			client.getMaxOrderQtyAllow(sID, sAcc, "FC", "IF1601.CF.FC",  1, 2, 120);
 //			client.getMaxOrderQtyAllow(sID, sAcc, "SC", "601390.SH.SC",  1, 2, 120);
-			client.getMaxOrderQtyAllow(sID, sAcc, "FX", "USDJPY.FX",  1, 2, 120);
-			Thread.sleep(3000);
-			client.getGlobalSetting("FX");
+//			client.getMaxOrderQtyAllow(sID, sAcc, "FX", "USDJPY.FX",  1, 2, 120);
+//			Thread.sleep(3000);
+//			client.getGlobalSetting("FX");
 //			Thread.sleep(3000);
 			//client.premiumFollow(sID, sAcc, "FX", "premiumfollow");
 			//Thread.sleep(3000);

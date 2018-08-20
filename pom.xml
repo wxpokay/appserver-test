@@ -63,6 +63,41 @@
             <artifactId>fluent-hc</artifactId>
             <version>4.4.1</version>
         </dependency>
+        <dependency>
+            <groupId>cn.hkfdt.backend</groupId>
+            <artifactId>hangqing-pkt</artifactId>
+            <version>5.0.2-SNAPSHOT</version>
+            <exclusions>
+                <exclusion>
+                    <artifactId>slf4j-api</artifactId>
+                    <groupId>org.slf4j</groupId>
+                </exclusion>
+                <exclusion>
+                    <artifactId>log4j</artifactId>
+                    <groupId>log4j</groupId>
+                </exclusion>
+            </exclusions>
+        </dependency>
     </dependencies>
+    <repositories>
+        <repository>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+            <id>inner</id>
+            <name>libs-release</name>
+            <url>http://192.168.4.135:8333/artifactory/remote-repos</url>
+        </repository>
+        <repository>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>always</updatePolicy>
+                <checksumPolicy>warn</checksumPolicy>
+            </snapshots>
+            <id>inner2</id>
+            <name>libs-release</name>
+            <url>http://192.168.4.135:8333/artifactory/ext-snapshot-local</url>
+        </repository>
+    </repositories>
 
 </project>

@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="ApacheJMeter_components">
+    <CLASSES>
+      <root url="jar://F:/jmeter/apache-jmeter-4.0/apache-jmeter-4.0/lib/ext/ApacheJMeter_components.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
